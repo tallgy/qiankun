@@ -241,6 +241,13 @@ let prevAppUnmountedDeferred: Deferred<void>;
 
 export type ParcelConfigObjectGetter = (remountContainer?: string | HTMLElement) => ParcelConfigObject;
 
+/**
+ * 
+ * @param app 必选，微应用的一些注册信息
+ * @param configuration start 的配置信息
+ * @param lifeCycles 可选，全局的微应用生命周期钩子
+ * @returns 
+ */
 export async function loadApp<T extends ObjectType>(
   app: LoadableApp<T>,
   configuration: FrameworkConfiguration = {},
@@ -250,6 +257,8 @@ export async function loadApp<T extends ObjectType>(
   const appInstanceId = genAppInstanceIdByName(appName);
 
   const markName = `[qiankun] App ${appInstanceId} Loading`;
+
+  // 使用 performance 性能监听
   if (process.env.NODE_ENV === 'development') {
     performanceMark(markName);
   }
@@ -263,8 +272,11 @@ export async function loadApp<T extends ObjectType>(
   } = configuration;
 
   // get the entry html content and script executor
+  // 获取条目HTML内容和脚本执行器
+  // template：html+style execScripts 执行脚本 assetPublicPath 公共path getExternalScripts 脚本请求
   const { template, execScripts, assetPublicPath, getExternalScripts } = await importEntry(entry, importEntryOpts);
   // trigger external scripts loading to make sure all assets are ready before execScripts calling
+  // 触发外部脚本加载，以确保在 execScripts 调用之前所有资产都准备好了
   await getExternalScripts();
 
   // as single-spa load and bootstrap new app parallel with other apps unmounting
@@ -273,7 +285,7 @@ export async function loadApp<T extends ObjectType>(
   if (await validateSingularMode(singular, app)) {
     await (prevAppUnmountedDeferred && prevAppUnmountedDeferred.promise);
   }
-
+  // TODO
   const appContent = getDefaultTplWrapper(appInstanceId, sandbox)(template);
 
   const strictStyleIsolation = typeof sandbox === 'object' && !!sandbox.strictStyleIsolation;

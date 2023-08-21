@@ -16,6 +16,7 @@ import { Deferred, getContainerXPath, isConstDestructAssignmentSupported, toArra
 
 let microApps: Array<RegistrableApp<Record<string, unknown>>> = [];
 
+/** start 的 opts 将会影响到这个配置 */
 export let frameworkConfiguration: FrameworkConfiguration = {};
 
 let started = false;
@@ -56,6 +57,11 @@ const autoDowngradeForLowVersionBrowser = (configuration: FrameworkConfiguration
   return configuration;
 };
 
+/**
+ * 注册信息
+ * @param apps 必选，微应用的一些注册信息
+ * @param lifeCycles lifeCycles - LifeCycles - 可选，全局的微应用生命周期钩子
+ */
 export function registerMicroApps<T extends ObjectType>(
   apps: Array<RegistrableApp<T>>,
   lifeCycles?: FrameworkLifeCycles<T>,
@@ -72,6 +78,7 @@ export function registerMicroApps<T extends ObjectType>(
       name,
       app: async () => {
         loader(true);
+        // 这个等待不知道是为了什么。但是和整体逻辑不挂钩
         await frameworkStartedDefer.promise;
 
         const { mount, ...otherMicroAppConfigs } = (

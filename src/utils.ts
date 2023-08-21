@@ -234,6 +234,11 @@ export function performanceGetEntriesByName(markName: string, type?: string) {
   return marks;
 }
 
+/**
+ * Performance 接口可以获取到当前页面中与性能相关的信息。
+ * 详见：https://developer.mozilla.org/zh-CN/docs/Web/API/Performance
+ * @param markName 
+ */
 export function performanceMark(markName: string) {
   if (supportsUserTiming) {
     performance.mark(markName);
