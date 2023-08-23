@@ -40,18 +40,31 @@ export class ScopedCSS {
     this.sheet.disabled = true;
   }
 
+  /**
+   * 这个主要是 依赖了 cssRule 来让 textContent 层架 prefix 的scope
+   * 增加了 css scope 效果
+   * @param styleNode styleNode
+   * @param prefix 同一个微应用的值相等
+   * @returns 
+   */
   process(styleNode: HTMLStyleElement, prefix: string = '') {
+    // 判断是否已经更新了
     if (ScopedCSS.ModifiedTag in styleNode) {
       return;
     }
 
+    // 如果存在 textContent 那么将里面的 rules 加上 scope 然后返回
     if (styleNode.textContent !== '') {
+      // 其实就是 style 里面的内容
       const textNode = document.createTextNode(styleNode.textContent || '');
       this.swapNode.appendChild(textNode);
+      // 详细请看 styleSheet https://developer.mozilla.org/zh-CN/docs/Web/API/StyleSheet
       const sheet = this.swapNode.sheet as any; // type is missing
+      // 详情请看 https://developer.mozilla.org/zh-CN/docs/Web/API/CSSRule
       const rules = arrayify<CSSRule>(sheet?.cssRules ?? []);
       const css = this.rewrite(rules, prefix);
       // eslint-disable-next-line no-param-reassign
+      // 覆盖原来的 textContent 可以生效
       styleNode.textContent = css;
 
       // cleanup
@@ -60,6 +73,9 @@ export class ScopedCSS {
       return;
     }
 
+    // 本质实现还是和上面一样的，添加监听的原因应该是如果此时内容没有更新，那么去监听
+    // 等待更新后进行操作
+    // MutationObserver 接口提供了监视对 DOM 树所做更改的能力。
     const mutator = new MutationObserver((mutations) => {
       for (let i = 0; i < mutations.length; i += 1) {
         const mutation = mutations[i];
@@ -83,13 +99,22 @@ export class ScopedCSS {
 
     // since observer will be deleted when node be removed
     // we dont need create a cleanup function manually
+    // 因为当节点被移除时观察者也会被删除，所以我们不需要手动创建一个清理函数
     // see https://developer.mozilla.org/en-US/docs/Web/API/MutationObserver/disconnect
     mutator.observe(styleNode, { childList: true });
   }
 
+  /**
+   * 这个作用是将 css rule 重写，将每一个 css rules 都添加一个 prefix 的作用域
+   * @param rules 
+   * @param prefix 
+   * @returns 
+   */
   private rewrite(rules: CSSRule[], prefix: string = '') {
     let css = '';
 
+    // 判断每个 cssRule type 是什么类型
+    // https://developer.mozilla.org/en-US/docs/Web/API/CSSRule/type
     rules.forEach((rule) => {
       switch (rule.type) {
         case RuleType.STYLE:
@@ -191,6 +216,13 @@ export class ScopedCSS {
 let processor: ScopedCSS;
 
 export const QiankunCSSRewriteAttr = 'data-qiankun';
+/**
+ * css 增加 scope 
+ * @param appWrapper template
+ * @param stylesheetElement style
+ * @param appName 
+ * @returns 
+ */
 export const process = (
   appWrapper: HTMLElement,
   stylesheetElement: HTMLStyleElement | HTMLLinkElement,
@@ -202,6 +234,7 @@ export const process = (
   }
 
   if (stylesheetElement.tagName === 'LINK') {
+    // 特点:沙箱。experimentalStyleIsolation不支持链接元素。
     console.warn('Feature: sandbox.experimentalStyleIsolation is not support for link element yet.');
   }
 
@@ -212,7 +245,10 @@ export const process = (
 
   const tag = (mountDOM.tagName || '').toLowerCase();
 
+  // 如果是 style
   if (tag && stylesheetElement.tagName === 'STYLE') {
+    // 生成 prefix 按理来说，一个 微应用的 prefix 是相等的。
+    // 这个作用就是生成 css 的一个scope tag=div QiankunCSSRewriteAttr=data-qiankun appName
     const prefix = `${tag}[${QiankunCSSRewriteAttr}="${appName}"]`;
     processor.process(stylesheetElement, prefix);
   }

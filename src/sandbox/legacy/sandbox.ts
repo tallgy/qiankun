@@ -13,6 +13,8 @@ function isPropConfigurable(target: WindowProxy, prop: PropertyKey) {
 
 /**
  * 基于 Proxy 实现的沙箱
+ * name: 沙箱名字
+ * context：沙箱所依赖的全局变量
  * TODO: 为了兼容性 singular 模式下依旧使用该沙箱，等新沙箱稳定之后再切换
  */
 export default class LegacySandbox implements SandBox {
@@ -48,6 +50,7 @@ export default class LegacySandbox implements SandBox {
     }
   }
 
+  /** 激活 */
   active() {
     if (!this.sandboxRunning) {
       this.currentUpdatedPropsValueMap.forEach((v, p) => this.setWindowProp(p, v));
@@ -56,6 +59,7 @@ export default class LegacySandbox implements SandBox {
     this.sandboxRunning = true;
   }
 
+  /** 不激活 */
   inactive() {
     if (process.env.NODE_ENV === 'development') {
       console.info(`[qiankun:sandbox] ${this.name} modified global properties restore...`, [
@@ -79,9 +83,33 @@ export default class LegacySandbox implements SandBox {
     const { addedPropsMapInSandbox, modifiedPropsOriginalValueMapInSandbox, currentUpdatedPropsValueMap } = this;
 
     const rawWindow = globalContext;
+    // 创建一份 fake window
     const fakeWindow = Object.create(null) as Window;
 
+    /**
+     * 设置属性 p 的值为 value originValue
+     * 首先，每次的值 会通过 currentUpdatedPropsValueMap 进行更新
+     * 如果 sync2Window 为 true 那么就会 同步更新到 globalContext 里面
+     * 如果 globalContext 没有，那么就会 addedPropsMapInSandbox 添加 value
+     * 如果 modifiedPropsOriginalValueMapInSandbox 没有，那么就会添加 originalValue
+     * 
+     * 
+     * if window no has p，那么属于新增变量
+     * else if 不属于更新的变量，那么记录原始数据
+     * 然后更新数据
+     * 
+     * 这种沙箱应该是类似于 将 新增的变量记录下来
+     * 将如果存在的属性修改，就会记录原始数据
+     * 在移除的时候，可以直接删除新增的变量，然后将原始数据覆盖新数据
+     * 做到恢复的效果
+     * @param p 
+     * @param value 
+     * @param originalValue 
+     * @param sync2Window 
+     * @returns true
+     */
     const setTrap = (p: PropertyKey, value: any, originalValue: any, sync2Window = true) => {
+      // 如果属于激活状态
       if (this.sandboxRunning) {
         if (!rawWindow.hasOwnProperty(p)) {
           addedPropsMapInSandbox.set(p, value);
@@ -102,24 +130,26 @@ export default class LegacySandbox implements SandBox {
         return true;
       }
 
-      if (process.env.NODE_ENV === 'development') {
-        console.warn(`[qiankun] Set window.${p.toString()} while sandbox destroyed or inactive in ${name}!`);
-      }
+      // 表示 sandbox 已经被 销毁 或者 inactive
 
       // 在 strict-mode 下，Proxy 的 handler.set 返回 false 会抛出 TypeError，在沙箱卸载的情况下应该忽略错误
       return true;
     };
 
+    // 通过使用 Proxy 代理。
     const proxy = new Proxy(fakeWindow, {
       set: (_: Window, p: PropertyKey, value: any): boolean => {
         const originalValue = (rawWindow as any)[p];
+        // 返回值必须为 true
         return setTrap(p, value, originalValue, true);
       },
 
       get(_: Window, p: PropertyKey): any {
+        // 避免谁使用 window.window 还是 window.self 要逃离沙箱环境，触摸真正的 window 或使用 window.top 检查是否有iframe上下文
         // avoid who using window.window or window.self to escape the sandbox environment to touch the really window
         // or use window.top to check if an iframe context
         // see https://github.com/eligrey/FileSaver.js/blob/master/src/FileSaver.js#L13
+        // 代表都是 window 本身
         if (p === 'top' || p === 'parent' || p === 'window' || p === 'self') {
           return proxy;
         }
@@ -134,15 +164,29 @@ export default class LegacySandbox implements SandBox {
         return p in rawWindow;
       },
 
+      /**
+       * 获取属性
+       * @param _ 
+       * @param p 
+       * @returns 
+       */
       getOwnPropertyDescriptor(_: Window, p: PropertyKey): PropertyDescriptor | undefined {
         const descriptor = Object.getOwnPropertyDescriptor(rawWindow, p);
         // A property cannot be reported as non-configurable, if it does not exists as an own property of the target object
+        // 如果属性不作为目标对象的自有属性存在，则不能将其报告为不可配置
         if (descriptor && !descriptor.configurable) {
           descriptor.configurable = true;
         }
         return descriptor;
       },
 
+      /**
+       * 这个更新属性
+       * @param _ 
+       * @param p 
+       * @param attributes 
+       * @returns 
+       */
       defineProperty(_: Window, p: string | symbol, attributes: PropertyDescriptor): boolean {
         const originalValue = (rawWindow as any)[p];
         const done = Reflect.defineProperty(rawWindow, p, attributes);

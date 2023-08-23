@@ -55,6 +55,11 @@ function execHooksChain<T extends ObjectType>(
   return Promise.resolve();
 }
 
+/**
+ * @param validate 
+ * @param app 
+ * @returns validate(app) !!validate
+ */
 async function validateSingularMode<T extends ObjectType>(
   validate: FrameworkConfiguration['singular'],
   app: LoadableApp<T>,
@@ -64,21 +69,32 @@ async function validateSingularMode<T extends ObjectType>(
 
 const supportShadowDOM = !!document.head.attachShadow || !!(document.head as any).createShadowRoot;
 
+/**
+ * 创建 createElement 
+ * 通过 shadow Dom 实现 dom 隔离
+ * 通过 css 添加 作用域，实现 css 隔离
+ * @param appContent div id=name template
+ * @param strictStyleIsolation 
+ * @param scopedCSS 
+ * @param appInstanceId 
+ * @returns 
+ */
 function createElement(
   appContent: string,
   strictStyleIsolation: boolean,
   scopedCSS: boolean,
   appInstanceId: string,
 ): HTMLElement {
+  // 创建一个 div
   const containerElement = document.createElement('div');
   containerElement.innerHTML = appContent;
   // appContent always wrapped with a singular div
+  // appContent 总是用一个div来包装
   const appElement = containerElement.firstChild as HTMLElement;
+  // 创建 shadow DOM
   if (strictStyleIsolation) {
     if (!supportShadowDOM) {
-      console.warn(
-        '[qiankun]: As current browser not support shadow dom, your strictStyleIsolation configuration will be ignored!',
-      );
+      // 由于当前浏览器不支持 shadow DOM ，您的 strictStyleIsolation 配置将被忽略
     } else {
       const { innerHTML } = appElement;
       appElement.innerHTML = '';
@@ -88,18 +104,22 @@ function createElement(
         shadow = appElement.attachShadow({ mode: 'open' });
       } else {
         // createShadowRoot was proposed in initial spec, which has then been deprecated
+        // createShadowRoot是在最初的规范中提出的，后来被弃用了
         shadow = (appElement as any).createShadowRoot();
       }
       shadow.innerHTML = innerHTML;
     }
   }
 
+  // scope css
   if (scopedCSS) {
+    // 寻找带有 data-qiankun 属性的
     const attr = appElement.getAttribute(css.QiankunCSSRewriteAttr);
     if (!attr) {
       appElement.setAttribute(css.QiankunCSSRewriteAttr, appInstanceId);
     }
 
+    // 寻找所有 style
     const styleNodes = appElement.querySelectorAll('style') || [];
     forEach(styleNodes, (stylesheetElement: HTMLStyleElement) => {
       css.process(appElement!, stylesheetElement, appInstanceId);
@@ -148,6 +168,9 @@ type ElementRender = (
 /**
  * Get the render function
  * If the legacy render function is provide, used as it, otherwise we will insert the app element to target container by qiankun
+ * 如果提供了遗留的渲染函数，就使用它，否则我们将通过乾坤将app元素插入目标容器
+ * 返回 render 方法 将 appContent 作为容器，将 render 的 element 作为被渲染的DOM
+ * 首先其实 appContent 里面其实是有被渲染的，但是会删除 firstChild 然后再渲染 element element 其实也是 appContent
  * @param appInstanceId
  * @param appContent
  * @param legacyRender
@@ -155,12 +178,7 @@ type ElementRender = (
 function getRender(appInstanceId: string, appContent: string, legacyRender?: HTMLContentRender) {
   const render: ElementRender = ({ element, loading, container }, phase) => {
     if (legacyRender) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error(
-          '[qiankun] Custom rendering function is deprecated and will be removed in 3.0, you can use the container element setting instead!',
-        );
-      }
-
+      // 自定义渲染功能已弃用，并将在3.0中删除，您可以使用容器元素设置代替!
       return legacyRender({ loading, appContent: element ? appContent : '' });
     }
 
@@ -168,6 +186,7 @@ function getRender(appInstanceId: string, appContent: string, legacyRender?: HTM
 
     // The container might have be removed after micro app unmounted.
     // Such as the micro app unmount lifecycle called by a react componentWillUnmount lifecycle, after micro app unmounted, the react component might also be removed
+    // 容器可能在微应用卸载后被移除。比如由react componentWillUnmount生命周期调用的微应用卸载生命周期，在微应用卸载后，react组件也可能被移除
     if (phase !== 'unmounted') {
       const errorMsg = (() => {
         switch (phase) {
@@ -258,12 +277,8 @@ export async function loadApp<T extends ObjectType>(
 
   const markName = `[qiankun] App ${appInstanceId} Loading`;
 
-  // 使用 performance 性能监听
-  if (process.env.NODE_ENV === 'development') {
-    performanceMark(markName);
-  }
-
   const {
+    /** 可选，是否为单实例场景，单实例指的是同一时间只会渲染一个微应用。 */
     singular = false,
     sandbox = true,
     excludeAssetFilter,
@@ -276,7 +291,7 @@ export async function loadApp<T extends ObjectType>(
   // template：html+style execScripts 执行脚本 assetPublicPath 公共path getExternalScripts 脚本请求
   const { template, execScripts, assetPublicPath, getExternalScripts } = await importEntry(entry, importEntryOpts);
   // trigger external scripts loading to make sure all assets are ready before execScripts calling
-  // 触发外部脚本加载，以确保在 execScripts 调用之前所有资产都准备好了
+  // 触发外部脚本加载，以确保在 execScripts 调用之前所有资产都准备好了 加载脚本
   await getExternalScripts();
 
   // as single-spa load and bootstrap new app parallel with other apps unmounting
@@ -285,16 +300,10 @@ export async function loadApp<T extends ObjectType>(
   if (await validateSingularMode(singular, app)) {
     await (prevAppUnmountedDeferred && prevAppUnmountedDeferred.promise);
   }
-  // TODO
   const appContent = getDefaultTplWrapper(appInstanceId, sandbox)(template);
 
   const strictStyleIsolation = typeof sandbox === 'object' && !!sandbox.strictStyleIsolation;
-
-  if (process.env.NODE_ENV === 'development' && strictStyleIsolation) {
-    console.warn(
-      "[qiankun] strictStyleIsolation configuration will be removed in 3.0, pls don't depend on it or use experimentalStyleIsolation instead!",
-    );
-  }
+  // strictStyleIsolation配置将在3.0中删除，请不要依赖它或使用experimentalStyleIsolation代替!
 
   const scopedCSS = isEnableScopedCSS(sandbox);
   let initialAppWrapperElement: HTMLElement | null = createElement(

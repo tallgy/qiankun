@@ -17,6 +17,11 @@ export function sleep(ms: number) {
 
 // Promise.then might be synchronized in Zone.js context, we need to use setTimeout instead to mock next tick.
 // Since zone.js will hijack the setTimeout callback, and notify angular to do change detection, so we need to use the  __zone_symbol__setTimeout to avoid this, see https://github.com/umijs/qiankun/issues/2384
+// 的承诺。然后可能会在Zone.js上下文中同步，我们需要使用setTimeout来模拟下一个tick。
+// 由于zone.js会劫持setTimeout回调，并通知angular进行变更检测，所以我们需要使用__zone_symbol_settimeout来避免这种情况，
+/**
+ * 有点像是使用了 Promise 微任务进行延迟调用
+ */
 const nextTick: (cb: () => void) => void =
   typeof window.__zone_symbol__setTimeout === 'function'
     ? window.__zone_symbol__setTimeout
@@ -27,9 +32,11 @@ let globalTaskPending = false;
 /**
  * Run a callback before next task executing, and the invocation is idempotent in every singular task
  * That means even we called nextTask multi times in one task, only the first callback will be pushed to nextTick to be invoked.
+ * 在下一个任务执行之前运行回调，并且调用在每个单个任务中都是幂等的，这意味着即使我们在一个任务中多次调用nextTask，也只有第一个回调会被推到 nextTick 来调用。
  * @param cb
  */
 export function nextTask(cb: () => void): void {
+  // 如果这个 没有执行 变成 false，那么就不会继续执行
   if (!globalTaskPending) {
     globalTaskPending = true;
     nextTick(() => {
@@ -41,6 +48,11 @@ export function nextTask(cb: () => void): void {
 
 const fnRegexCheckCacheMap = new WeakMap<any | FunctionConstructor, boolean>();
 
+/**
+ * 是构造函数
+ * @param fn 
+ * @returns 
+ */
 export function isConstructable(fn: () => any | FunctionConstructor) {
   // prototype methods might be changed while code running, so we need check it every time
   const hasPrototypeMethods =
@@ -72,6 +84,12 @@ export function isConstructable(fn: () => any | FunctionConstructor) {
 }
 
 const callableFnCacheMap = new WeakMap<CallableFunction, boolean>();
+
+/**
+ * 是方法
+ * @param fn 
+ * @returns 
+ */
 export function isCallable(fn: any): boolean {
   if (callableFnCacheMap.has(fn)) {
     return true;
@@ -116,6 +134,11 @@ export function isPropertyFrozen(target: any, p?: PropertyKey): boolean {
 
 const boundedMap = new WeakMap<CallableFunction, boolean>();
 
+/**
+ * 貌似是如果使用了 bind 方法之后的 name 会加上 bound
+ * @param fn 
+ * @returns 
+ */
 export function isBoundedFunction(fn: CallableFunction) {
   if (boundedMap.has(fn)) {
     return boundedMap.get(fn);
@@ -140,20 +163,31 @@ export const isConstDestructAssignmentSupported = memoize(() => {
 
 export const qiankunHeadTagName = 'qiankun-head';
 
+/**
+ * 返回一个 使用 template 为参数的函数
+ * 替换 head 为 qiankun-head
+ * @param name 
+ * @param sandboxOpts 
+ * @returns 一个 div id为name 
+ */
 export function getDefaultTplWrapper(name: string, sandboxOpts: FrameworkConfiguration['sandbox']) {
   return (tpl: string) => {
     let tplWithSimulatedHead: string;
 
+    // 将 head 替换为 qiankun-head
     if (tpl.indexOf('<head>') !== -1) {
       // We need to mock a head placeholder as native head element will be erased by browser in micro app
+      // 我们需要模拟一个头部占位符，因为在微应用中，原生头部元素会被浏览器删除
       tplWithSimulatedHead = tpl
         .replace('<head>', `<${qiankunHeadTagName}>`)
         .replace('</head>', `</${qiankunHeadTagName}>`);
     } else {
       // Some template might not be a standard html document, thus we need to add a simulated head tag for them
+      // 有些模板可能不是标准的html文档，因此我们需要为它们添加模拟的头部标记
       tplWithSimulatedHead = `<${qiankunHeadTagName}></${qiankunHeadTagName}>${tpl}`;
     }
 
+    // 创建一个 id 和 name挂钩的 div，将替换了的 template 放入
     return `<div id="${getWrapperId(
       name,
     )}" data-name="${name}" data-version="${version}" data-sandbox-cfg=${JSON.stringify(

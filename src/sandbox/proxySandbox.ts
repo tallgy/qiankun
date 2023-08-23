@@ -83,31 +83,47 @@ const useNativeWindowForBindingsProps = new Map<PropertyKey, boolean>([
   ['mockDomAPIInBlackList', process.env.NODE_ENV === 'test'],
 ]);
 
+/**
+ * 将global的不可配置属性复制到fakeWindow 
+ * 并且将属性存在 get 方法的属性 放入 propertiesWithGetter 值为 true
+ * @param globalContext 
+ * @param speedy 
+ * @returns 
+ */
 function createFakeWindow(globalContext: Window, speedy: boolean) {
   // map always has the fastest performance in has check scenario
+  // Map 总是有最快的性能在检查场景
   // see https://jsperf.com/array-indexof-vs-set-has/23
   const propertiesWithGetter = new Map<PropertyKey, boolean>();
   const fakeWindow = {} as FakeWindow;
 
   /*
    copy the non-configurable property of global to fakeWindow
+   将global的不可配置属性复制到fakeWindow 但是只是自身的属性，没有考虑到 prototype
    see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy/handler/getOwnPropertyDescriptor
    > A property cannot be reported as non-configurable, if it does not exist as an own property of the target object or if it exists as a configurable own property of the target object.
+   如果属性不作为目标对象的自有属性存在，或者作为目标对象的可配置自有属性存在，则不能将其报告为不可配置的属性。
    */
   Object.getOwnPropertyNames(globalContext)
+    // 获取不可配置的属性
     .filter((p) => {
+      // configurable ：当且仅当此属性描述符的类型可以更改且该属性可以从相应对象中删除时，为 true。
       const descriptor = Object.getOwnPropertyDescriptor(globalContext, p);
       return !descriptor?.configurable;
     })
     .forEach((p) => {
       const descriptor = Object.getOwnPropertyDescriptor(globalContext, p);
+      // 如果存在 descriptor
       if (descriptor) {
+        // 如果重写了 get 方法
         const hasGetter = Object.prototype.hasOwnProperty.call(descriptor, 'get');
 
         /*
          make top/self/window property configurable and writable, otherwise it will cause TypeError while get trap return.
+         使 top/self/window 属性可配置且可写，否则在 get trap返回时将导致TypeError。
          see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy/handler/get
          > The value reported for a property must be the same as the value of the corresponding target object property if the target object property is a non-writable, non-configurable data property.
+         如果目标对象属性是不可写、不可配置的数据属性，则属性报告的值必须与相应的目标对象属性的值相同。
          */
         if (
           p === 'top' ||
@@ -115,6 +131,7 @@ function createFakeWindow(globalContext: Window, speedy: boolean) {
           p === 'self' ||
           p === 'window' ||
           // window.document is overwriting in speedy mode
+          // 在快速模式下覆盖
           (p === 'document' && speedy) ||
           (inTest && (p === mockTop || p === mockSafariTop))
         ) {
@@ -122,17 +139,22 @@ function createFakeWindow(globalContext: Window, speedy: boolean) {
           /*
            The descriptor of window.window/window.top/window.self in Safari/FF are accessor descriptors, we need to avoid adding a data descriptor while it was
            Example:
+           window.window/window.top/window的描述符。在Safari/FF中，self都是访问器描述符，我们需要避免添加数据描述符
             Safari/FF: Object.getOwnPropertyDescriptor(window, 'top') -> {get: function, set: undefined, enumerable: true, configurable: false}
             Chrome: Object.getOwnPropertyDescriptor(window, 'top') -> {value: Window, writable: false, enumerable: true, configurable: false}
            */
+          // 如果 没有 get 方法，那么将 writable 设置为true
+          // 不知道其作用是什么
           if (!hasGetter) {
             descriptor.writable = true;
           }
         }
 
+        // 存在 getter 方法
         if (hasGetter) propertiesWithGetter.set(p, true);
 
         // freeze the descriptor to avoid being modified by zone.js
+        // 冻结描述符以避免被 zone.js 修改    rawObjectDefineProperty 就是 defineProperty
         // see https://github.com/angular/zone.js/blob/a5fe09b0fac27ac5df1fa746042f96f05ccb6a00/lib/browser/define-property.ts#L71
         rawObjectDefineProperty(fakeWindow, p, Object.freeze(descriptor));
       }
@@ -391,15 +413,25 @@ export default class ProxySandbox implements SandBox {
     }
   }
 
+  /**
+   * 更新目前被运行的app
+   * 同时每次 微任务之后都要去 清除 不知道这个的原因是什么。。
+   * @param name 
+   * @param proxy 
+   */
   private registerRunningApp(name: string, proxy: Window) {
     if (this.sandboxRunning) {
       const currentRunningApp = getCurrentRunningApp();
+      // 更新 目前被运行的 app 如果是这个，表明了，同时只能一次只能运行一个app
       if (!currentRunningApp || currentRunningApp.name !== name) {
         setCurrentRunningApp({ name, window: proxy });
       }
       // FIXME if you have any other good ideas
       // remove the mark in next tick, thus we can identify whether it in micro app or not
       // this approach is just a workaround, it could not cover all complex cases, such as the micro app runs in the same task context with master in some case
+      // 如果你有任何其他好的想法，请删除下一个tick中的标记，
+      // 这样我们就可以确定它是否在微应用中，这种方法只是一种变通方法，它不能涵盖所有复杂的情况，例如微应用在某些情况下与master运行在相同的任务上下文中
+      // 微任务
       nextTask(clearCurrentRunningApp);
     }
   }
