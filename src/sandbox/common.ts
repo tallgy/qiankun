@@ -29,7 +29,7 @@ const functionBoundedValueMap = new WeakMap<CallableFunction, CallableFunction>(
 
 /**
  * 简单的就是获取 value
- * 考虑了方法的情况，这个不是很了解
+ * 考虑了方法的情况，这个不是很了解：看目前情况应该是解决 this 指向问题。
  * @param target 
  * @param value 
  * @returns 

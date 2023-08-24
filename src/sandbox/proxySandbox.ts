@@ -78,6 +78,10 @@ const unscopables = without(cachedGlobals, ...accessingSpiedGlobals.concat(overw
   Object.create(null),
 );
 
+/**
+ * 某些 dom api 必须绑定到本机窗口，
+ * 否则会导致类似 “TypeError: Failed to execute 'fetch' on' window ': Illegal invocation”的异常。 
+ */
 const useNativeWindowForBindingsProps = new Map<PropertyKey, boolean>([
   ['fetch', true],
   ['mockDomAPIInBlackList', process.env.NODE_ENV === 'test'],
@@ -187,19 +191,16 @@ export default class ProxySandbox implements SandBox {
   }
 
   inactive() {
-    if (process.env.NODE_ENV === 'development') {
-      console.info(`[qiankun:sandbox] ${this.name} modified global properties restore...`, [
-        ...this.updatedValueSet.keys(),
-      ]);
-    }
-
     if (inTest || --activeSandboxCount === 0) {
       // reset the global value to the prev value
+      // 将全局值重置为前一个值
       Object.keys(this.globalWhitelistPrevDescriptor).forEach((p) => {
         const descriptor = this.globalWhitelistPrevDescriptor[p];
         if (descriptor) {
+          // 如果存在描述，直接重新定义描述就行
           Object.defineProperty(this.globalContext, p, descriptor);
         } else {
+          // 否则直接删除这个属性就行
           // @ts-ignore
           delete this.globalContext[p];
         }
@@ -213,6 +214,7 @@ export default class ProxySandbox implements SandBox {
     this.document = doc;
   }
 
+  // 白名单中未被修改的全局变量的描述符
   // the descriptor of global variables in whitelist before it been modified
   globalWhitelistPrevDescriptor: { [p in (typeof globalVariableWhiteList)[number]]: PropertyDescriptor | undefined } =
     {};
@@ -235,18 +237,25 @@ export default class ProxySandbox implements SandBox {
           this.registerRunningApp(name, proxy);
 
           // sync the property to globalContext
+          // 如果是在 白名单里面，那么就直接赋值到全局属性里面
+          // 否则，赋值到 target fakeWindow 里面，这里考虑到了 保存原有描述的情况
+          // 将属性同步到 globalContext 
           if (typeof p === 'string' && globalVariableWhiteList.indexOf(p) !== -1) {
+
             this.globalWhitelistPrevDescriptor[p] = Object.getOwnPropertyDescriptor(globalContext, p);
             // @ts-ignore
             globalContext[p] = value;
           } else {
             // We must keep its description while the property existed in globalContext before
+            // 当属性之前存在于globalContext中时，我们必须保留它的描述
             if (!target.hasOwnProperty(p) && globalContext.hasOwnProperty(p)) {
               const descriptor = Object.getOwnPropertyDescriptor(globalContext, p);
               const { writable, configurable, enumerable, set } = descriptor!;
               // only writable property can be overwritten
               // here we ignored accessor descriptor of globalContext as it makes no sense to trigger its logic(which might make sandbox escaping instead)
               // we force to set value by data descriptor
+              // 这里我们忽略了 globalContext的 accessor descriptor，
+              // 因为触发它的逻辑没有意义(这可能会导致沙箱转义)，我们强制通过数据描述符设置值
               if (writable || set) {
                 Object.defineProperty(target, p, { configurable, enumerable, writable: true, value });
               }
@@ -255,6 +264,7 @@ export default class ProxySandbox implements SandBox {
             }
           }
 
+          // 维护一个更新的 Set
           updatedValueSet.add(p);
 
           this.latestSetProp = p;
@@ -270,56 +280,70 @@ export default class ProxySandbox implements SandBox {
         return true;
       },
 
+      /**
+       * 除了考虑特殊情况
+       * 然后就是考虑 this 指向情况
+       * @param target 
+       * @param p 
+       * @returns 
+       */
       get: (target: FakeWindow, p: PropertyKey): any => {
         this.registerRunningApp(name, proxy);
 
+        // 特殊情况考虑
         if (p === Symbol.unscopables) return unscopables;
         // avoid who using window.window or window.self to escape the sandbox environment to touch the real window
+        // 避免谁使用 window.window 还是 window.self 逃离沙箱环境去触摸真正的窗口
         // see https://github.com/eligrey/FileSaver.js/blob/master/src/FileSaver.js#L13
         if (p === 'window' || p === 'self') {
           return proxy;
         }
-
         // hijack globalWindow accessing with globalThis keyword
+        // 使用 globalThis 关键字劫持globalWindow访问
         if (p === 'globalThis' || (inTest && p === mockGlobalThis)) {
           return proxy;
         }
-
         if (p === 'top' || p === 'parent' || (inTest && (p === mockTop || p === mockSafariTop))) {
+          // 如果你的主应用在 iframe 上下文中，允许这些道具脱离沙盒
           // if your master app in an iframe context, allow these props escape the sandbox
           if (globalContext === globalContext.parent) {
+            // parent 主要作用应该是 iframe 获取父窗口的情况
+            // 所以这里表示的就是，如果是 iframe 那么就允许脱离沙盒，如果不是，那么就返回 proxy
             return proxy;
           }
           return (globalContext as any)[p];
         }
-
         // proxy.hasOwnProperty would invoke getter firstly, then its value represented as globalContext.hasOwnProperty
+        // proxy.hasOwnProperty将首先调用 getter，然后它的值表示为 globalContext.hasOwnProperty
         if (p === 'hasOwnProperty') {
           return hasOwnProperty;
         }
-
         if (p === 'document') {
           return this.document;
         }
-
         if (p === 'eval') {
           return eval;
         }
-
+        // 如果是白名单
         if (p === 'string' && globalVariableWhiteList.indexOf(p) !== -1) {
           // @ts-ignore
           return globalContext[p];
         }
 
+        // 存在 propertiesWithGetter 或者 不属于 target 里面 就会使用 globalContext 否则使用 target
         const actualTarget = propertiesWithGetter.has(p) ? globalContext : p in target ? target : globalContext;
         const value = actualTarget[p];
 
+        // 冻结的值应该直接返回
         // frozen value should return directly, see https://github.com/umijs/qiankun/issues/2015
         if (isPropertyFrozen(actualTarget, p)) {
           return value;
         }
 
-        /* Some dom api must be bound to native window, otherwise it would cause exception like 'TypeError: Failed to execute 'fetch' on 'Window': Illegal invocation'
+        /*
+        某些dom api必须绑定到本机窗口，否则会导致类似
+        “TypeError: Failed to execute 'fetch' on' window ': Illegal invocation”的异常。 
+          Some dom api must be bound to native window, otherwise it would cause exception like 'TypeError: Failed to execute 'fetch' on 'Window': Illegal invocation'
            See this code:
              const proxy = new Proxy(window, {});
              const proxyFetch = fetch.bind(proxy);

@@ -50,7 +50,7 @@ export default class LegacySandbox implements SandBox {
     }
   }
 
-  /** 激活 */
+  /** 激活 将 currentUpdatedPropsValueMap 更新到 全局 */
   active() {
     if (!this.sandboxRunning) {
       this.currentUpdatedPropsValueMap.forEach((v, p) => this.setWindowProp(p, v));
@@ -61,16 +61,12 @@ export default class LegacySandbox implements SandBox {
 
   /** 不激活 */
   inactive() {
-    if (process.env.NODE_ENV === 'development') {
-      console.info(`[qiankun:sandbox] ${this.name} modified global properties restore...`, [
-        ...this.addedPropsMapInSandbox.keys(),
-        ...this.modifiedPropsOriginalValueMapInSandbox.keys(),
-      ]);
-    }
-
     // renderSandboxSnapshot = snapshot(currentUpdatedPropsValueMapForSnapshot);
     // restore global props to initial snapshot
+    // 将全局道具恢复到初始快照
+    // 这个将所有值恢复原始状态
     this.modifiedPropsOriginalValueMapInSandbox.forEach((v, p) => this.setWindowProp(p, v));
+    // 这个将所有新增的值，删除
     this.addedPropsMapInSandbox.forEach((_, p) => this.setWindowProp(p, undefined, true));
 
     this.sandboxRunning = false;
@@ -165,7 +161,7 @@ export default class LegacySandbox implements SandBox {
       },
 
       /**
-       * 获取属性
+       * 获取属性描述
        * @param _ 
        * @param p 
        * @returns 
@@ -181,7 +177,9 @@ export default class LegacySandbox implements SandBox {
       },
 
       /**
-       * 这个更新属性
+       * 这个更新属性 拦截对象的 Object.defineProperty() 操作。
+       * Object.defineProperty 返回一个对象，或者如果属性没有被成功定义，抛出一个 TypeError。
+       * 相比之下，Reflect.defineProperty 方法只返回一个 Boolean，来说明该属性是否被成功定义。
        * @param _ 
        * @param p 
        * @param attributes 

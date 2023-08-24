@@ -9,6 +9,7 @@ function iter(obj: typeof window, callbackFn: (prop: any) => void) {
   // eslint-disable-next-line guard-for-in, no-restricted-syntax
   for (const prop in obj) {
     // patch for clearInterval for compatible reason, see #1490
+    // 由于兼容原因，为 clearInterval 补丁
     if (obj.hasOwnProperty(prop) || prop === 'clearInterval') {
       callbackFn(prop);
     }
@@ -37,6 +38,11 @@ export default class SnapshotSandbox implements SandBox {
     this.type = SandBoxType.Snapshot;
   }
 
+  /**
+   * 两步：
+   * 记录快照
+   * 恢复变更
+   */
   active() {
     // 记录当前快照
     this.windowSnapshot = {} as Window;
@@ -52,6 +58,11 @@ export default class SnapshotSandbox implements SandBox {
     this.sandboxRunning = true;
   }
 
+  /**
+   * 两步：
+   * 记录变更
+   * 恢复环境
+   */
   inactive() {
     this.modifyPropsMap = {};
 
