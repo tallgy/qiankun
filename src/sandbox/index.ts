@@ -50,6 +50,7 @@ export function createSandboxContainer(
   }
 
   // some side effect could be invoked while bootstrapping, such as dynamic stylesheet injection with style-loader, especially during the development phase
+  // 在引导过程中可能会调用一些副作用，例如使用样式加载器进行动态样式表注入，特别是在开发阶段
   const bootstrappingFreers = patchAtBootstrapping(
     appName,
     elementGetter,
@@ -77,10 +78,12 @@ export function createSandboxContainer(
       /* ------------------------------------------ 1. 启动/恢复 沙箱------------------------------------------ */
       sandbox.active();
 
+      // 浅拷贝一份方便处理
       const sideEffectsRebuildersAtBootstrapping = sideEffectsRebuilders.slice(0, bootstrappingFreers.length);
       const sideEffectsRebuildersAtMounting = sideEffectsRebuilders.slice(bootstrappingFreers.length);
 
       // must rebuild the side effects which added at bootstrapping firstly to recovery to nature state
+      // 必须先重建启动时增加的副作用才能恢复到自然状态
       if (sideEffectsRebuildersAtBootstrapping.length) {
         sideEffectsRebuildersAtBootstrapping.forEach((rebuild) => rebuild());
       }
@@ -105,6 +108,7 @@ export function createSandboxContainer(
     async unmount() {
       // record the rebuilders of window side effects (event listeners or timers)
       // note that the frees of mounting phase are one-off as it will be re-init at next mounting
+      // 记录窗口副作用(事件侦听器或计时器)的重建，注意安装阶段的释放是一次性的，因为它将在下一次安装时重新初始化
       sideEffectsRebuilders = [...bootstrappingFreers, ...mountingFreers].map((free) => free());
 
       sandbox.inactive();

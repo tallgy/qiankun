@@ -7,6 +7,7 @@ import { isFunction, noop } from 'lodash';
 
 export default function patch() {
   // FIXME umi unmount feature request
+  // Umi卸载特性请求
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let rawHistoryListen = (_: any) => noop;
   const historyListeners: Array<typeof noop> = [];

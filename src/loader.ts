@@ -43,6 +43,13 @@ function assertElementExist(element: Element | null | undefined, msg?: string) {
   }
 }
 
+/**
+ * 执行 hooks 链
+ * @param hooks 
+ * @param app 
+ * @param global 
+ * @returns 
+ */
 function execHooksChain<T extends ObjectType>(
   hooks: Array<LifeCycleFn<T>>,
   app: LoadableApp<T>,
@@ -56,6 +63,7 @@ function execHooksChain<T extends ObjectType>(
 }
 
 /**
+ * 验证 app  validate(app) !!validate
  * @param validate 
  * @param app 
  * @returns validate(app) !!validate
@@ -362,9 +370,11 @@ export async function loadApp<T extends ObjectType>(
     beforeLoad = [],
   } = mergeWith({}, getAddOns(global, assetPublicPath), lifeCycles, (v1, v2) => concat(v1 ?? [], v2 ?? []));
 
+  // 执行 beforeLoad 的 hooks
   await execHooksChain(toArray(beforeLoad), app, global);
 
   // get the lifecycle hooks from module exports
+  // 从模块导出中获取生命周期钩子
   const scriptExports: any = await execScripts(global, sandbox && !useLooseSandbox, {
     scopedGlobalVariables: speedySandbox ? cachedGlobals : [],
   });
@@ -379,6 +389,7 @@ export async function loadApp<T extends ObjectType>(
     getMicroAppStateActions(appInstanceId);
 
   // FIXME temporary way
+  // 暂时的方法
   const syncAppWrapperElement2Sandbox = (element: HTMLElement | null) => (initialAppWrapperElement = element);
 
   const parcelConfigGetter: ParcelConfigObjectGetter = (remountContainer = initialContainer) => {
@@ -388,16 +399,12 @@ export async function loadApp<T extends ObjectType>(
     const parcelConfig: ParcelConfigObject = {
       name: appInstanceId,
       bootstrap,
+      /**
+       * mount 执行顺序
+       * 获取容器 、 确保容器已经完成 、 sandboxContainer.mount 、 执行 beforeMount 钩子
+       * mount 、 render 、 执行 afterMount 钩子
+       */
       mount: [
-        async () => {
-          if (process.env.NODE_ENV === 'development') {
-            const marks = performanceGetEntriesByName(markName, 'mark');
-            // mark length is zero means the app is remounting
-            if (marks && !marks.length) {
-              performanceMark(markName);
-            }
-          }
-        },
         async () => {
           if ((await validateSingularMode(singular, app)) && prevAppUnmountedDeferred) {
             return prevAppUnmountedDeferred.promise;
@@ -419,9 +426,11 @@ export async function loadApp<T extends ObjectType>(
         // 添加 mount hook, 确保每次应用加载前容器 dom 结构已经设置完毕
         async () => {
           const useNewContainer = remountContainer !== initialContainer;
+          // 判断容器是否存在
           if (useNewContainer || !appWrapperElement) {
             // element will be destroyed after unmounted, we need to recreate it if it not exist
             // or we try to remount into a new container
+            // 元素在卸载后将被销毁，如果它不存在，我们需要重新创建它，或者我们尝试重新挂载到一个新的容器中
             appWrapperElement = createElement(appContent, strictStyleIsolation, scopedCSS, appInstanceId);
             syncAppWrapperElement2Sandbox(appWrapperElement);
           }
@@ -430,9 +439,11 @@ export async function loadApp<T extends ObjectType>(
         },
         mountSandbox,
         // exec the chain after rendering to keep the behavior with beforeLoad
+        // 在渲染后执行链以保持beforeLoad的行为
         async () => execHooksChain(toArray(beforeMount), app, global),
         async (props) => mount({ ...props, container: appWrapperGetter(), setGlobalState, onGlobalStateChange }),
         // finish loading after app mounted
+        // 安装应用程序后完成加载
         async () => render({ element: appWrapperElement, loading: false, container: remountContainer }, 'mounted'),
         async () => execHooksChain(toArray(afterMount), app, global),
         // initialize the unmount defer after app mounted and resolve the defer after it unmounted
@@ -441,13 +452,12 @@ export async function loadApp<T extends ObjectType>(
             prevAppUnmountedDeferred = new Deferred<void>();
           }
         },
-        async () => {
-          if (process.env.NODE_ENV === 'development') {
-            const measureName = `[qiankun] App ${appInstanceId} Loading Consuming`;
-            performanceMeasure(measureName, markName);
-          }
-        },
       ],
+      /**
+       * unmount 执行顺序
+       * beforeUnmount 钩子 、 unmount 、 sandboxContainer.unmount 方法 、 afterUnmount 钩子
+       * render unmounted 、 将容器设置为null 解决gc回收
+       */
       unmount: [
         async () => execHooksChain(toArray(beforeUnmount), app, global),
         async (props) => unmount({ ...props, container: appWrapperGetter() }),
