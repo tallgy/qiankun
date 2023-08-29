@@ -47,11 +47,12 @@ export function getTargetValue(target: any, value: any): any {
       return cachedBoundFunction;
     }
 
+    // 这一行代码实现了 this 指向的偏移
     const boundValue = Function.prototype.bind.call(value, target);
 
     // some callable function has custom fields, we need to copy the enumerable props to boundValue. such as moment function.
     // use for..in rather than Object.keys.forEach for performance reason
-    // 一些可调用函数有自定义字段，我们需要将可枚举的props复制到boundValue。比如矩函数。出于性能原因，使用for. in而不是Object.keys.forEach
+    // 一些可调用函数有自定义字段，我们需要将可枚举的 props 复制到 boundValue 。比如矩函数。出于性能原因，使用for. in而不是Object.keys.forEach
     // eslint-disable-next-line guard-for-in,no-restricted-syntax
     for (const key in value) {
       boundValue[key] = value[key];

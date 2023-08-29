@@ -96,6 +96,7 @@ export function isCallable(fn: any): boolean {
   }
 
   /**
+   * 我们不能使用 typeof 来确认它的功能是否与某些 safari 版本一样
    * We can not use typeof to confirm it is function as in some safari version
    * typeof document.all === 'undefined' // true
    * typeof document.all === 'function' // true
